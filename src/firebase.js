@@ -8,12 +8,13 @@ import {
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCCi72NNM7LRVHHCYu3tKKOIqjQReSv71k",
-  authDomain: "foodbaria-86ee1.firebaseapp.com",
-  projectId: "foodbaria-86ee1",
-  storageBucket: "foodbaria-86ee1.firebasestorage.app",
-  messagingSenderId: "517856531056",
-  appId: "1:517856531056:web:e88ed11277b3670096dab5",
+  apiKey: "AIzaSyBkv5ZmiT5FZCPKLFGFhDoLDzoO3spPosQ",
+  authDomain: "foodbaria-2dcc7.firebaseapp.com",
+  projectId: "foodbaria-2dcc7",
+  storageBucket: "foodbaria-2dcc7.firebasestorage.app",
+  messagingSenderId: "908126665893",
+  appId: "1:908126665893:web:c7179ddacea38dd050614c",
+  measurementId: "G-C2QVEBD135"
 };
 
 const firebaseApp = !getApps().length
