@@ -131,15 +131,12 @@ const MapModal = ({
     isLoading,
   } = useGetZoneId(location, zoneIdEnabled);
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      if (zoneData) {
-        setZoneId(zoneData?.zone_id);
-        if (fromReceiver !== "1") {
-          localStorage.setItem("zoneid", zoneData?.zone_id);
-        }
-      }
-      if (!zoneData) {
-        setZoneId(undefined);
+  if (typeof window !== "undefined") {
+      const zones = zoneData?.zones || [];
+      setZoneId(zones.length > 0 ? zones[0]?.zone_id : undefined);
+
+      if (fromReceiver !== "1" && zones.length > 0) {
+        localStorage.setItem("zoneid", zones[0]?.zone_id);
       }
     }
   }, [zoneData]);
