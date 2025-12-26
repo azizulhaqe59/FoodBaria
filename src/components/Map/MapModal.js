@@ -308,8 +308,8 @@ const MapModal = ({
                     fullWidth
                     freeSolo
                     id="combo-box-demo"
-                    getOptionLabel={(option) => option.description}
-                    options={predictions}
+                    getOptionLabel={(option) => option?.description || ""}
+                    options={predictions || []}
                     onChange={(event, value) => {
                       if (value) {
                         if (value !== "" && typeof value === "string") {
