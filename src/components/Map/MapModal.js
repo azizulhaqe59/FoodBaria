@@ -63,7 +63,10 @@ const MapModal = ({
   const theme = useTheme();
   const isXSmall = useMediaQuery(theme.breakpoints.down("sm"));
   const { configData } = useSelector((state) => state.configData);
+  const { selectedModule } = useSelector((state) => state.utilsData);
   const { t } = useTranslation();
+  const dispatch = useDispatch();
+
   const [searchKey, setSearchKey] = useState("");
   const [enabled, setEnabled] = useState(false);
   const [predictions, setPredictions] = useState([]);
@@ -74,7 +77,6 @@ const MapModal = ({
   const [location, setLocation] = useState(
     selectedLocation ? selectedLocation : configData?.default_location
   );
-  const { selectedModule } = useSelector((state) => state.utilsData);
   const [zoneId, setZoneId] = useState(undefined);
   const [isLoadingCurrentLocation, setLoadingCurrentLocation] = useState(false);
   const [currentLocation, setCurrentLocation] = useState({});
@@ -86,60 +88,62 @@ const MapModal = ({
   const [currentLocationValue, setCurrentLocationValue] = useState("");
   const [openModuleSelection, setOpenModuleSelection] = useState(false);
 
-  const dispatch = useDispatch();
-  const { coords, isGeolocationAvailable, isGeolocationEnabled } = useGeolocated({
+  const { coords, isGeolocationEnabled } = useGeolocated({
     positionOptions: { enableHighAccuracy: false },
     userDecisionTimeout: 5000,
     isGeolocationEnabled: true,
   });
 
+  // Fetch autocomplete suggestions
   const { data: places, isLoading: placesIsLoading } = useGetAutocompletePlace(
     searchKey,
     enabled
   );
 
   // Debounce input
-  const debounce = (func, delay) => {
+  const debounce = useCallback((func, delay) => {
     let timer;
     return (...args) => {
       clearTimeout(timer);
-      timer = setTimeout(() => {
-        func(...args);
-      }, delay);
+      timer = setTimeout(() => func(...args), delay);
     };
-  };
+  }, []);
+
   const handleInputChange = useCallback(
     debounce((val) => {
       setSearchKey(val);
       setEnabled(!!val);
     }, 300),
-    []
+    [debounce]
   );
 
-  // Map places to predictions safely
+  // Map places to predictions
   useEffect(() => {
     if (places?.suggestions?.length > 0) {
-      const tempData = places.suggestions.map((item) => ({
-        place_id: item?.placePrediction?.placeId || "",
-        description: `${item?.placePrediction?.structuredFormat?.mainText?.text || ""}, ${item?.placePrediction?.structuredFormat?.secondaryText?.text || ""}`,
-      }));
-      setPredictions(tempData);
+      setPredictions(
+        places.suggestions.map((item) => ({
+          place_id: item?.placePrediction?.placeId || "",
+          description: `${item?.placePrediction?.structuredFormat?.mainText?.text || ""}, ${
+            item?.placePrediction?.structuredFormat?.secondaryText?.text || ""
+          }`,
+        }))
+      );
     } else {
       setPredictions([]);
     }
   }, [places]);
 
-  const { data: geoCodeResults, refetch: refetchCurrentLocation } =
-    useGetGeoCode(location, true);
+  // Fetch GeoCode
+  const { data: geoCodeResults, refetch: refetchCurrentLocation } = useGetGeoCode(
+    location,
+    true
+  );
 
   useEffect(() => {
-    if (geoCodeResults?.results?.[0]?.formatted_address) {
-      setCurrentLocationValue(geoCodeResults.results[0].formatted_address);
-    } else {
-      setCurrentLocationValue("");
-    }
+    setCurrentLocationValue(geoCodeResults?.results?.[0]?.formatted_address || "");
   }, [geoCodeResults]);
 
+  // Fetch Zone
   const { data: zoneData, error: errorLocation, isLoading } = useGetZoneId(
     location,
     zoneIdEnabled
@@ -147,21 +151,20 @@ const MapModal = ({
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      if (zoneData) {
-        setZoneId(zoneData?.zone_id);
-        if (fromReceiver !== "1") localStorage.setItem("zoneid", zoneData?.zone_id);
+      if (zoneData?.zone_id) {
+        setZoneId(zoneData.zone_id);
+        if (fromReceiver !== "1") localStorage.setItem("zoneid", zoneData.zone_id);
       } else {
         setZoneId(undefined);
       }
     }
-  }, [zoneData]);
+  }, [zoneData, fromReceiver]);
 
-  const successHandler = () => setLoadingAuto(false);
-
+  // Fetch place details
   const { data: placeDetails } = useGetPlaceDetails(
     placeId,
     placeDetailsEnabled,
-    successHandler
+    () => setLoadingAuto(false)
   );
 
   useEffect(() => {
@@ -181,14 +184,14 @@ const MapModal = ({
     if (coords) setCurrentLocation({ lat: coords.latitude, lng: coords.longitude });
   }, [coords]);
 
-  const handleLocationSelection = (value) => {
+  const handleLocationSelection = useCallback((value) => {
     if (!value) return;
     setPlaceId(value.place_id || "");
     setPlaceDescription(value.description || "");
     setCurrentLocationValue(value.description || "");
-  };
+  }, []);
 
-  const handlePickLocationOnClick = () => {
+  const handlePickLocationOnClick = useCallback(() => {
     const moduleType = getCurrentModuleType();
     if (!zoneId || !geoCodeResults?.results?.[0]?.formatted_address || !location) return;
 
@@ -217,16 +220,19 @@ const MapModal = ({
     } else {
       setOpenModuleSelection(true);
     }
-  };
+  }, [zoneId, geoCodeResults, location, fromReceiver, toparcel, fromStore, selectedModule, handleLocation, t]);
 
-  const handleCloseModuleModal = (item) => {
-    if (item) {
-      toast.success(t(module_select_success));
-      router.push("/home", undefined, { shallow: true });
-    }
-    setOpenModuleSelection(false);
-    handleClose?.();
-  };
+  const handleCloseModuleModal = useCallback(
+    (item) => {
+      if (item) {
+        toast.success(t(module_select_success));
+        router.push("/home", undefined, { shallow: true });
+      }
+      setOpenModuleSelection(false);
+      handleClose?.();
+    },
+    [router, t, handleClose]
+  );
 
   return (
     <>
@@ -275,8 +281,7 @@ const MapModal = ({
                     getOptionLabel={(option) => option?.description || ""}
                     value={currentLocationValue}
                     onChange={(event, value) => {
-                      if (value && value.description) handleLocationSelection(value);
-                      else if (typeof value === "string") setCurrentLocationValue(value);
+                      handleLocationSelection(value);
                       setPlaceDetailsEnabled(true);
                     }}
                     clearOnBlur={false}
@@ -312,11 +317,11 @@ const MapModal = ({
                     <Skeleton variant="rounded" width={300} height={20} />
                   )}
                 </LocationView>
-                {!!location ? (
+                {location ? (
                   <GoogleMapComponent
                     setDisablePickButton={setDisablePickButton}
                     setLocationEnabled={setLocationEnabled}
-                    setLocation={(values) => setLocation(values)}
+                    setLocation={setLocation}
                     setCurrentLocation={setCurrentLocation}
                     locationLoading={locationLoading}
                     location={location}
