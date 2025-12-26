@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState } from "react";
+import React, { memo, useEffect, useState, useCallback } from "react";
 import {
   Autocomplete,
   Backdrop,
@@ -9,6 +9,7 @@ import {
   Typography,
   useMediaQuery,
   useTheme,
+  CircularProgress,
 } from "@mui/material";
 import {
   CustomBoxWrapper,
@@ -35,20 +36,17 @@ import GoogleMapComponent from "./GoogleMapComponent";
 import toast from "react-hot-toast";
 import "simplebar-react/dist/simplebar.min.css";
 import SimpleBar from "simplebar-react";
-
-
 import { useRouter } from "next/router";
 import { ModuleSelection } from "../landing-page/hero-section/module-selection";
 import { useGeolocated } from "react-geolocated";
 import { module_select_success } from "src/utils/toasterMessages";
-import { FacebookCircularProgress } from "../loading-spinners/FacebookLoading";
 import { setWishList } from "src/redux/slices/wishList";
 import { useWishListGet } from "src/api-manage/hooks/react-query/wish-list/useWishListGet";
 import { getToken } from "src/helper-functions/getToken";
 import ModalExtendShrink from "./ModalExtendShrink";
 import { getCurrentModuleType } from "helper-functions/getCurrentModuleType";
 import { useGetWishList } from "api-manage/hooks/react-query/rental-wishlist/useGetWishlist";
-
+import { FacebookCircularProgress } from "../loading-spinners/FacebookLoading";
 
 const MapModal = ({
   open,
@@ -63,19 +61,16 @@ const MapModal = ({
 }) => {
   const router = useRouter();
   const theme = useTheme();
-
-
   const isXSmall = useMediaQuery(theme.breakpoints.down("sm"));
   const { configData } = useSelector((state) => state.configData);
   const { t } = useTranslation();
   const [searchKey, setSearchKey] = useState("");
   const [enabled, setEnabled] = useState(false);
-  const [geoLocationEnable, setGeoLocationEnable] = useState(true);
   const [predictions, setPredictions] = useState([]);
   const [placeDetailsEnabled, setPlaceDetailsEnabled] = useState(false);
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [placeId, setPlaceId] = useState("");
-  const [placeDescription, setPlaceDescription] = useState(undefined);
+  const [placeDescription, setPlaceDescription] = useState("");
   const [location, setLocation] = useState(
     selectedLocation ? selectedLocation : configData?.default_location
   );
@@ -88,157 +83,141 @@ const MapModal = ({
   const [loadingAuto, setLoadingAuto] = useState(false);
   const [isDisablePickButton, setDisablePickButton] = useState(false);
   const [isModalExpand, setIsModalExpand] = useState(false);
-  const [currentLocationValue, setCurrentLactionValue] = useState({
-    description: null,
-  });
+  const [currentLocationValue, setCurrentLocationValue] = useState("");
   const [openModuleSelection, setOpenModuleSelection] = useState(false);
+
+  const dispatch = useDispatch();
+  const { coords, isGeolocationAvailable, isGeolocationEnabled } = useGeolocated({
+    positionOptions: { enableHighAccuracy: false },
+    userDecisionTimeout: 5000,
+    isGeolocationEnabled: true,
+  });
+
   const { data: places, isLoading: placesIsLoading } = useGetAutocompletePlace(
     searchKey,
     enabled
   );
-  const dispatch = useDispatch();
-  const { coords, isGeolocationAvailable, isGeolocationEnabled, getPosition } =
-    useGeolocated({
-      positionOptions: {
-        enableHighAccuracy: false,
-      },
-      userDecisionTimeout: 5000,
-      isGeolocationEnabled: true,
-    });
 
+  // Debounce input
+  const debounce = (func, delay) => {
+    let timer;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        func(...args);
+      }, delay);
+    };
+  };
+  const handleInputChange = useCallback(
+    debounce((val) => {
+      setSearchKey(val);
+      setEnabled(!!val);
+    }, 300),
+    []
+  );
 
+  // Map places to predictions safely
   useEffect(() => {
-    if (places) {
-      const tempData = places?.suggestions?.map((item) => ({
-        place_id: item?.placePrediction?.placeId,
-        description: `${item?.placePrediction?.structuredFormat?.mainText?.text}, ${item?.placePrediction?.structuredFormat?.secondaryText?.text}`,
+    if (places?.suggestions?.length > 0) {
+      const tempData = places.suggestions.map((item) => ({
+        place_id: item?.placePrediction?.placeId || "",
+        description: `${item?.placePrediction?.structuredFormat?.mainText?.text || ""}, ${item?.placePrediction?.structuredFormat?.secondaryText?.text || ""}`,
       }));
       setPredictions(tempData);
+    } else {
+      setPredictions([]);
     }
   }, [places]);
+
   const { data: geoCodeResults, refetch: refetchCurrentLocation } =
-    useGetGeoCode(location, geoLocationEnable);
+    useGetGeoCode(location, true);
+
   useEffect(() => {
-    if (geoCodeResults) {
-      setCurrentLactionValue({
-        description: geoCodeResults?.results[0]?.formatted_address,
-      });
+    if (geoCodeResults?.results?.[0]?.formatted_address) {
+      setCurrentLocationValue(geoCodeResults.results[0].formatted_address);
     } else {
-      setCurrentLactionValue({
-        description: "",
-      });
+      setCurrentLocationValue("");
     }
   }, [geoCodeResults]);
-  const {
-    data: zoneData,
-    error: errorLocation,
-    isLoading,
-  } = useGetZoneId(location, zoneIdEnabled);
+
+  const { data: zoneData, error: errorLocation, isLoading } = useGetZoneId(
+    location,
+    zoneIdEnabled
+  );
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       if (zoneData) {
         setZoneId(zoneData?.zone_id);
-        if (fromReceiver !== "1") {
-          localStorage.setItem("zoneid", zoneData?.zone_id);
-        }
-      }
-      if (!zoneData) {
+        if (fromReceiver !== "1") localStorage.setItem("zoneid", zoneData?.zone_id);
+      } else {
         setZoneId(undefined);
       }
     }
   }, [zoneData]);
-  const successHandler = () => {
-    setLoadingAuto(false);
-  };
 
+  const successHandler = () => setLoadingAuto(false);
 
-  const { isLoading: isLoading2, data: placeDetails } = useGetPlaceDetails(
+  const { data: placeDetails } = useGetPlaceDetails(
     placeId,
     placeDetailsEnabled,
     successHandler
   );
-  //
-
 
   useEffect(() => {
-    if (placeDetails) {
+    if (placeDetails?.location) {
       setLocation({
-        lat: placeDetails?.location?.latitude,
-        lng: placeDetails?.location?.longitude,
+        lat: placeDetails.location.latitude,
+        lng: placeDetails.location.longitude,
       });
     }
   }, [placeDetails]);
-  useEffect(() => {
-    if (placeDescription) {
-      setCurrentLocation(placeDescription);
-    }
-  }, [placeDescription]);
-  useEffect(() => {
-    if (coords) {
-      setCurrentLocation({
-        lat: coords.latitude,
-        lng: coords.longitude,
-      });
-    }
-  }, []);
 
+  useEffect(() => {
+    if (placeDescription) setCurrentLocation(placeDescription);
+  }, [placeDescription]);
+
+  useEffect(() => {
+    if (coords) setCurrentLocation({ lat: coords.latitude, lng: coords.longitude });
+  }, [coords]);
 
   const handleLocationSelection = (value) => {
-    setPlaceId(value?.place_id);
-    setPlaceDescription(value?.description);
-  };
-  const handleLocationSet = (values) => {
-    setLocation(values);
+    if (!value) return;
+    setPlaceId(value.place_id || "");
+    setPlaceDescription(value.description || "");
+    setCurrentLocationValue(value.description || "");
   };
 
-
-  // get module from localstorage
-  const moduleType = getCurrentModuleType();
-  const onSuccessHandler = (response) => {
-    dispatch(setWishList(response));
-  };
-  const { refetch: wishlistRefetch } = useWishListGet(onSuccessHandler);
-  const { refetch: rentalWishlistRefetch } = useGetWishList(onSuccessHandler);
   const handlePickLocationOnClick = () => {
-    if (zoneId && geoCodeResults && location) {
-      if (getToken()) {
-        if (moduleType === "rental") {
-          rentalWishlistRefetch();
-        } else {
-          wishlistRefetch();
-        }
-      }
-      if (fromReceiver !== "1" && toparcel !== "1") {
-        localStorage.setItem("zoneid", zoneId);
-      }
-      if (fromReceiver !== "1" && toparcel !== "1") {
-        localStorage.setItem(
-          "location",
-          geoCodeResults?.results[0]?.formatted_address
-        );
-        localStorage.setItem("currentLatLng", JSON.stringify(location));
-      } else {
-        toast.success(t("New location has been set."));
-      }
+    const moduleType = getCurrentModuleType();
+    if (!zoneId || !geoCodeResults?.results?.[0]?.formatted_address || !location) return;
 
-
-      if (toparcel === "1") {
-        handleLocation(location, geoCodeResults?.results[0]?.formatted_address);
-        handleClose();
+    if (getToken()) {
+      if (moduleType === "rental") {
+        useGetWishList(() => {}).refetch();
       } else {
-        if (fromStore) {
-          window.location.reload();
-          handleClose();
-        } else if (location && selectedModule) {
-          window.location.reload();
-          handleClose();
-        } else {
-          setOpenModuleSelection(true);
-        }
+        useWishListGet(() => {}).refetch();
       }
     }
-  };
 
+    if (fromReceiver !== "1" && toparcel !== "1") {
+      localStorage.setItem("zoneid", zoneId);
+      localStorage.setItem("location", geoCodeResults.results[0].formatted_address);
+      localStorage.setItem("currentLatLng", JSON.stringify(location));
+    } else {
+      toast.success(t("New location has been set."));
+    }
+
+    if (toparcel === "1") {
+      handleLocation(location, geoCodeResults.results[0].formatted_address);
+      handleClose();
+    } else if (fromStore || (location && selectedModule)) {
+      window.location.reload();
+      handleClose();
+    } else {
+      setOpenModuleSelection(true);
+    }
+  };
 
   const handleCloseModuleModal = (item) => {
     if (item) {
@@ -249,7 +228,6 @@ const MapModal = ({
     handleClose?.();
   };
 
-
   return (
     <>
       <Modal
@@ -257,11 +235,7 @@ const MapModal = ({
         onClose={handleClose}
         closeAfterTransition
         slots={{ backdrop: Backdrop }}
-        slotProps={{
-          backdrop: {
-            timeout: 500,
-          },
-        }}
+        slotProps={{ backdrop: { timeout: 500 } }}
       >
         <CustomBoxWrapper
           expand={isModalExpand ? "true" : "false"}
@@ -280,22 +254,12 @@ const MapModal = ({
           </IconButton>
           <CustomStackFullWidth spacing={2}>
             <SimpleBar
-              style={{
-                maxHeight: isModalExpand ? "100vh" : "65vh",
-                paddingRight: "15px",
-              }}
+              style={{ maxHeight: isModalExpand ? "100vh" : "65vh", paddingRight: "15px" }}
             >
-              <Typography
-                fontSize={{ xs: "14px", md: "1rem" }}
-                fontWeight={500}
-              >
+              <Typography fontSize={{ xs: "14px", md: "1rem" }} fontWeight={500}>
                 {t("Pick Location")}
               </Typography>
-              <Typography
-                fontSize={{ xs: "12px", md: "14px" }}
-                fontWeight={400}
-                color={theme.palette.neutral[500]}
-              >
+              <Typography fontSize={{ xs: "12px", md: "14px" }} fontWeight={400} color={theme.palette.neutral[500]}>
                 {t(
                   "Sharing your accurate location enhances precision in search results and delivery estimates, ensures effortless order delivery."
                 )}
@@ -307,81 +271,52 @@ const MapModal = ({
                   <Autocomplete
                     fullWidth
                     freeSolo
-                    id="combo-box-demo"
-                    getOptionLabel={(option) => option.description}
                     options={predictions}
+                    getOptionLabel={(option) => option?.description || ""}
+                    value={currentLocationValue}
                     onChange={(event, value) => {
-                      if (value) {
-                        if (value !== "" && typeof value === "string") {
-                          setLoadingAuto(true);
-                          const value = predictions[0];
-                          handleLocationSelection(value);
-                        } else {
-                          handleLocationSelection(value);
-                        }
-                      }
+                      if (value && value.description) handleLocationSelection(value);
+                      else if (typeof value === "string") setCurrentLocationValue(value);
                       setPlaceDetailsEnabled(true);
                     }}
                     clearOnBlur={false}
-                    value={currentLocationValue}
                     loading={placesIsLoading}
                     loadingText={t("Search suggestions are loading...")}
                     renderInput={(params) => (
                       <SearchLocationTextField
-                        sx={{
-                          borderRadius: "4px",
-                          border: (theme) =>
-                            `1px solid ${theme.palette.neutral[200]}`,
-                        }}
-                        frommap="true"
-                        label={null}
                         {...params}
                         placeholder={t("Search location")}
-                        onChange={(event) => {
-                          setSearchKey(event.target.value);
-                          if (event.target.value) {
-                            setEnabled(true);
-                          } else {
-                            setEnabled(false);
-                          }
-                        }}
-                        onKeyPress={(e) => {
-                          if (e.key === "Enter") {
-                            setSearchKey(e.target.value);
-                          }
+                        onChange={(e) => handleInputChange(e.target.value)}
+                        InputProps={{
+                          ...params.InputProps,
+                          endAdornment: (
+                            <>
+                              {placesIsLoading ? <CircularProgress size={20} /> : null}
+                              {params.InputProps.endAdornment}
+                            </>
+                          ),
                         }}
                       />
                     )}
                   />
                 )}
               </CustomStackFullWidth>
-              <CustomBoxFullWidth
-                sx={{
-                  mt: 2,
-                  color: (theme) => theme.palette.neutral[1000],
-                  p: "5px",
-                  position: "relative",
-                }}
-              >
+              <CustomBoxFullWidth sx={{ mt: 2, color: theme.palette.neutral[1000], p: "5px", position: "relative" }}>
                 <LocationView>
                   {geoCodeResults?.results?.length > 0 ? (
                     <>
                       <RoomIcon fontSize="small" color="primary" />
-                      <Typography>
-                        {geoCodeResults?.results[0]?.formatted_address}
-                      </Typography>
+                      <Typography>{geoCodeResults.results[0].formatted_address}</Typography>
                     </>
                   ) : (
-                    <>
-                      <Skeleton variant="rounded" width={300} height={20} />
-                    </>
+                    <Skeleton variant="rounded" width={300} height={20} />
                   )}
                 </LocationView>
                 {!!location ? (
                   <GoogleMapComponent
                     setDisablePickButton={setDisablePickButton}
                     setLocationEnabled={setLocationEnabled}
-                    setLocation={handleLocationSet}
+                    setLocation={(values) => setLocation(values)}
                     setCurrentLocation={setCurrentLocation}
                     locationLoading={locationLoading}
                     location={location}
@@ -392,26 +327,15 @@ const MapModal = ({
                     isModalExpand={isModalExpand}
                   />
                 ) : (
-                  <CustomStackFullWidth
-                    alignItems="center"
-                    justifyContent="center"
-                  >
+                  <CustomStackFullWidth alignItems="center" justifyContent="center">
                     <FacebookCircularProgress />
                     <CustomTypographyGray nodefaultfont="true">
                       {t("Please wait sometimes")}
                     </CustomTypographyGray>
                   </CustomStackFullWidth>
                 )}
-                <WrapperCurrentLocationPick
-                  alignItems="center"
-                  isXsmall={isXSmall}
-                  spacing={{ xs: 1, md: 2 }}
-                >
-                  <ModalExtendShrink
-                    isModalExpand={isModalExpand}
-                    setIsModalExpand={setIsModalExpand}
-                    t={t}
-                  />
+                <WrapperCurrentLocationPick alignItems="center" isXsmall={isXSmall} spacing={{ xs: 1, md: 2 }}>
+                  <ModalExtendShrink isModalExpand={isModalExpand} setIsModalExpand={setIsModalExpand} t={t} />
                   <UseCurrentLocation
                     setLoadingCurrentLocation={setLoadingCurrentLocation}
                     setLocationEnabled={setLocationEnabled}
@@ -425,30 +349,16 @@ const MapModal = ({
                   />
                 </WrapperCurrentLocationPick>
               </CustomBoxFullWidth>
-              <CustomStackFullWidth
-                justifyCenter="center"
-                alignItems="center"
-                sx={{
-                  position: "sticky",
-                  bottom: 0,
-                  zIndex: 9,
-                }}
-              >
+              <CustomStackFullWidth justifyCenter="center" alignItems="center" sx={{ position: "sticky", bottom: 0, zIndex: 9 }}>
                 {errorLocation?.response?.data ? (
                   <Button
                     aria-label="picklocation"
-                    sx={{
-                      flex: "1 0",
-                      width: "100%",
-                      top: "-3rem",
-                    }}
+                    sx={{ flex: "1 0", width: "100%", top: "-3rem" }}
                     disabled={locationLoading}
                     variant="contained"
                     color="error"
                     onClick={() => {
-                      if (zoneId) {
-                        localStorage.setItem("zoneid", zoneId);
-                      }
+                      if (zoneId) localStorage.setItem("zoneid", zoneId);
                       handleClose();
                     }}
                   >
@@ -456,12 +366,9 @@ const MapModal = ({
                   </Button>
                 ) : (
                   <PrimaryButton
-                    disabled={
-                      isLoading ||
-                      !geoCodeResults?.results[0]?.formatted_address
-                    }
+                    disabled={isLoading || !geoCodeResults?.results?.[0]?.formatted_address}
                     variant="contained"
-                    onClick={() => handlePickLocationOnClick()}
+                    onClick={handlePickLocationOnClick}
                   >
                     {t("Pick Locations")}
                   </PrimaryButton>
@@ -483,8 +390,4 @@ const MapModal = ({
   );
 };
 
-
 export default memo(MapModal);
-
-
-
