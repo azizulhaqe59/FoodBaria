@@ -41,7 +41,7 @@ export const fetchToken = async (setTokenFound, setFcmToken) => {
     if (!messaging) return;
 
     const currentToken = await getToken(messaging, {
-      vapidKey: "YGpze_X_f9l5ZHKPYa6X9IxkkKayGfTHpJ6TjU2EkWA",
+      vapidKey: "BB_wllVqKenUOUYy1Yuu1_7I1M-9E9PKXp2FlkE7sS9nYV29sYMI-GxGlGjBpLoK0XNKkg2k62RSM9WxMWnK-lE",
     });
 
     if (currentToken) {
