@@ -112,7 +112,12 @@ const StoresInfoCard = (props) => {
   };
 
   return (
-    <Stack sx={{ position: "relative", height: "100%" }}>
+    <Stack
+        sx={{
+          position: "relative",
+          height: { xs: "190px", sm: "100%" }, // xs = mobile screen (<750px)
+        }}
+      >
       {wishlistcard === "true" ? (
         <HeartWrapper onClick={() => setOpenModal(true)} top="4%" right="5%">
           <DeleteIcon style={{ color: theme.palette.error.light }} />
